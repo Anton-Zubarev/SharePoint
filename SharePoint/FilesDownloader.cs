@@ -1,4 +1,12 @@
-﻿using Microsoft.SharePoint.Client;
+﻿/*
+# Загрузка файлов из Sharepoint или с диска 
+
+Позволяет считать файлы, включая подпапки в иерархическую структуру FilesTree. 
+Имеет ряд хелперов для упраления - linq запросы. Поможет преобразовать 
+структуру в плоский список файлов. Может создать zip из FileTree.
+*/
+
+using Microsoft.SharePoint.Client;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -148,6 +156,53 @@ namespace FilesOperations
             filesTree.Url = urlToFolder;
             return filesTree;
         }
+
+        /// <summary>
+        /// Получить файл из шарика
+        /// </summary>
+        /// <param name="urlToFile"></param>
+        /// <param name="startSegmentCount"></param>
+        /// <returns></returns>
+        public static FileData GetSharePointFileDetails(string urlToFile, int startSegmentCount = 3)
+        {
+            var uri = new Uri(urlToFile);
+            var part1 = new UriBuilder(uri.Scheme, uri.Host, uri.Port, string.Join("/", uri.LocalPath.Trim(' ', '/').Split('/').Take(startSegmentCount))).Uri;
+            var part2 = uri.LocalPath;
+            var fileData = GetSharePointFileDetails(part1.OriginalString, part2);
+
+            return fileData;
+        }
+
+        private static FileData GetSharePointFileDetails(string siteUrl, string fileUrl)
+        {
+            var fileInfo = new FileData();
+
+            using (ClientContext context = new ClientContext(siteUrl))
+            {
+                Microsoft.SharePoint.Client.File spFile = context.Web.GetFileByServerRelativeUrl(fileUrl);
+
+                context.Load(spFile);
+                context.Load(spFile.Author);
+                context.Load(spFile.ModifiedBy);
+
+                context.ExecuteQuery();
+
+                FileInformation fileData = Microsoft.SharePoint.Client.File.OpenBinaryDirect(context, fileUrl);
+
+                using (MemoryStream ms = new MemoryStream())
+                {
+                    fileData.Stream.CopyTo(ms);
+                    fileInfo.FileContent = ms.ToArray();
+                }
+
+                fileInfo.FileName = spFile.Name;
+                fileInfo.AuthorLogin = spFile.Author.LoginName;
+                fileInfo.EditorLogin = spFile.ModifiedBy.LoginName;
+
+                return fileInfo;
+            }
+        }
+
 
         /// <summary>
         /// Скачать мета и данные файлов из папки на шарике
