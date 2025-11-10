@@ -149,6 +149,11 @@ namespace FilesOperations
         /// <remarks>Исключения в возварщаемом объекте</remarks>
         public static FilesTree DownloadFilesFromFolder(string urlToFolder, int startSegmentCount = 3, bool subFolders = false)
         {
+            if (!Uri.IsWellFormedUriString(urlToFolder, UriKind.Absolute))
+            {
+                throw new ArgumentException($"Argument {nameof(urlToFolder)} is incorrect.");
+            }
+
             var uri = new Uri(urlToFolder);
             var part1 = new UriBuilder(uri.Scheme, uri.Host, uri.Port, string.Join("/", uri.LocalPath.Trim(' ', '/').Split('/').Take(startSegmentCount))).Uri;
             var part2 = uri.LocalPath;
@@ -165,6 +170,11 @@ namespace FilesOperations
         /// <returns></returns>
         public static FileData GetSharePointFileDetails(string urlToFile, int startSegmentCount = 3)
         {
+            if (!Uri.IsWellFormedUriString(urlToFile, UriKind.Absolute))
+            {
+                throw new ArgumentException($"Argument {nameof(urlToFile)} is incorrect.");
+            }
+
             var uri = new Uri(urlToFile);
             var part1 = new UriBuilder(uri.Scheme, uri.Host, uri.Port, string.Join("/", uri.LocalPath.Trim(' ', '/').Split('/').Take(startSegmentCount))).Uri;
             var part2 = uri.LocalPath;
