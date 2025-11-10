@@ -153,7 +153,7 @@ namespace FilesOperations
             var part1 = new UriBuilder(uri.Scheme, uri.Host, uri.Port, string.Join("/", uri.LocalPath.Trim(' ', '/').Split('/').Take(startSegmentCount))).Uri;
             var part2 = uri.LocalPath;
             var filesTree = DownloadFilesFromFolder(part1.OriginalString, part2, subFolders);
-            filesTree.Url = urlToFolder;
+            if (filesTree != null) filesTree.Url = urlToFolder;
             return filesTree;
         }
 
@@ -220,7 +220,11 @@ namespace FilesOperations
 
                 Folder folder = context.Web.GetFolderByServerRelativeUrl(folderPath);
                 context.Load(folder, u => u.Name);
-                context.ExecuteQuery();
+                try
+                {
+                    context.ExecuteQuery();
+                }
+                catch (Exception) { return null; }
 
                 var filesTree = ProcessFolderRecursive(context, folder, subFolders);
                 return filesTree;
