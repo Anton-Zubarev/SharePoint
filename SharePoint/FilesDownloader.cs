@@ -54,6 +54,7 @@ namespace FilesOperations
                         var metadata = GetFileMetadata(filePath);
                         fileData.AuthorLogin = metadata.Owner;
                         fileData.EditorLogin = metadata.LastModifiedBy;
+                        fileData.TimeCreated = metadata.TimeCreated;
                     }
                     catch(Exception ex)
                     {
@@ -81,13 +82,13 @@ namespace FilesOperations
             return filesTree;
         }
 
-        private static (string Owner, string LastModifiedBy) GetFileMetadata(string filePath)
+        private static (string Owner, string LastModifiedBy, DateTime TimeCreated) GetFileMetadata(string filePath)
         {
             try
             {
                 var fileInfo = new FileInfo(filePath);
 
-                (string Owner, string LastModifiedBy) securityObj = (GetFileOwner(filePath), GetLastModifiedUser(filePath));
+                (string Owner, string LastModifiedBy, DateTime TimeCreated) securityObj = (GetFileOwner(filePath), GetLastModifiedUser(filePath), fileInfo.CreationTimeUtc);
 
                 return securityObj;
             }
@@ -194,6 +195,7 @@ namespace FilesOperations
                 context.Load(spFile);
                 context.Load(spFile.Author);
                 context.Load(spFile.ModifiedBy);
+                context.Load(spFile, (f) => f.TimeCreated);
 
                 context.ExecuteQuery();
 
@@ -208,6 +210,7 @@ namespace FilesOperations
                 fileInfo.FileName = spFile.Name;
                 fileInfo.AuthorLogin = spFile.Author.LoginName;
                 fileInfo.EditorLogin = spFile.ModifiedBy.LoginName;
+                fileInfo.TimeCreated = spFile.TimeCreated;
 
                 return fileInfo;
             }
@@ -234,7 +237,10 @@ namespace FilesOperations
                 {
                     context.ExecuteQuery();
                 }
-                catch (Exception) { return null; }
+                catch (Exception ex)
+                {
+                    return null;
+                }
 
                 var filesTree = ProcessFolderRecursive(context, folder, subFolders);
                 return filesTree;
@@ -261,10 +267,12 @@ namespace FilesOperations
                     {
                         context.Load(file.Author, u => u.LoginName); // sharepoint\\system
                         context.Load(file.ModifiedBy, u => u.LoginName);
+                        context.Load(file, u => u.TimeCreated);
                         context.ExecuteQuery();
 
                         fileData.AuthorLogin = file.Author.LoginName?.ToLower();
                         fileData.EditorLogin = file.ModifiedBy.LoginName?.ToLower();
+                        fileData.TimeCreated = file.TimeCreated;
 
                         FileInformation fileInfo = Microsoft.SharePoint.Client.File.OpenBinaryDirect(context, file.ServerRelativeUrl);
 
@@ -591,6 +599,7 @@ namespace FilesOperations
         public string FileName { get; set; }
         public string AuthorLogin { get; set; }
         public string EditorLogin { get; set; }
+        public DateTime TimeCreated { get; set; }
         public byte[] FileContent { get; set; }
         public Exception Exception { get; set; }
         public bool IsError => Exception != null;
