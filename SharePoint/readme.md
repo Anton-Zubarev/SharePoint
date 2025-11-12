@@ -23,6 +23,7 @@
         public string FileName { get; set; }
         public string AuthorLogin { get; set; }
         public string EditorLogin { get; set; }
+        public DateTime TimeCreated { get; set; }
         public byte[] FileContent { get; set; }
         public Exception Exception { get; set; }
         public bool IsError => Exception != null;
