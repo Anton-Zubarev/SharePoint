@@ -575,10 +575,14 @@ namespace FilesOperations
                     }
                 }
             });
-            foreach (var childNode in node.Children)
+
+            if (node.Children != null)
             {
-                string childPath = Path.Combine(currentPath, childNode.Url);
-                ArchiveNode(zipArchive, childNode, childPath, filter);
+                foreach (var childNode in node.Children)
+                {
+                    string childPath = Path.Combine(currentPath, childNode.Url);
+                    ArchiveNode(zipArchive, childNode, childPath, filter);
+                }
             }
         }
     }
