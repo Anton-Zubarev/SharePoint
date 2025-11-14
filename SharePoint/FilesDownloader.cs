@@ -13,6 +13,8 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Management;
+using System.Net;
+using System.Net.Http;
 using System.Security.Principal;
 
 namespace FilesOperations
@@ -20,7 +22,12 @@ namespace FilesOperations
 
     internal static class FilesDownloader
     {
-        #region Скачать с диска
+
+        static HttpClientHandler httpClientHandler = new HttpClientHandler { UseCookies = true, Credentials = CredentialCache.DefaultNetworkCredentials, UseDefaultCredentials = true };
+        static HttpClient httpClient = new HttpClient(httpClientHandler) { Timeout = TimeSpan.FromMinutes(3) };
+        static FilesDownloader() { }
+
+    #region Скачать с диска
         /// <summary>
         /// Скачать мета и данные файлов из папки на диске
         /// </summary>
@@ -169,7 +176,7 @@ namespace FilesOperations
         /// <param name="urlToFile"></param>
         /// <param name="startSegmentCount"></param>
         /// <returns></returns>
-        public static FileData GetSharePointFileDetails(string urlToFile, int startSegmentCount = 3)
+        public static FileData GetSharePointFileDetails(string urlToFile, int startSegmentCount = 3, bool downloadViaHttp = true)
         {
             if (!Uri.IsWellFormedUriString(urlToFile, UriKind.Absolute))
             {
@@ -184,7 +191,7 @@ namespace FilesOperations
             return fileData;
         }
 
-        private static FileData GetSharePointFileDetails(string siteUrl, string fileUrl)
+        private static FileData GetSharePointFileDetails(string siteUrl, string fileUrl, bool downloadViaHttp = true)
         {
             var fileInfo = new FileData();
 
@@ -199,19 +206,29 @@ namespace FilesOperations
 
                 context.ExecuteQuery();
 
-                FileInformation fileData = Microsoft.SharePoint.Client.File.OpenBinaryDirect(context, fileUrl);
-
-                using (MemoryStream ms = new MemoryStream())
-                {
-                    fileData.Stream.CopyTo(ms);
-                    fileInfo.FileContent = ms.ToArray();
-                }
-
                 fileInfo.FileName = spFile.Name;
                 fileInfo.AuthorLogin = spFile.Author.LoginName;
                 fileInfo.EditorLogin = spFile.ModifiedBy.LoginName;
                 fileInfo.TimeCreated = spFile.TimeCreated;
 
+                if (downloadViaHttp)
+                {
+                    var uri = new Uri(context.Url);
+                    // проблема при подсайтах в шарике - криво урл соберется
+                    var part1 = new UriBuilder(uri.Scheme, uri.Host, uri.Port, fileUrl).Uri.AbsoluteUri;
+
+                    fileInfo.GetFileViaHttpClient(part1);
+                }
+                else
+                {
+                    FileInformation fileData = Microsoft.SharePoint.Client.File.OpenBinaryDirect(context, fileUrl);
+                    using (MemoryStream ms = new MemoryStream())
+                    {
+                        fileData.Stream.CopyTo(ms);
+                        fileInfo.FileContent = ms.ToArray();
+                    }
+                }
+                
                 return fileInfo;
             }
         }
@@ -224,7 +241,7 @@ namespace FilesOperations
         /// <param name="folderPath"></param>
         /// <example>var fff = SharePointFileDownloader.DownloadFilesFromFolder("http://sharepoint-1/sites/docs/02152012205328-96", "/sites/docs/02152012205328-96/Leesee/7f512cd6-f1ef-ed11-8194-00155db09b37/Лизинговые сделки/10609976/Договор по предмету лизинга 32820-2023");</example>
         /// <returns></returns>
-        private static FilesTree DownloadFilesFromFolder(string siteUrl, string folderPath, bool subFolders = false)
+        private static FilesTree DownloadFilesFromFolder(string siteUrl, string folderPath, bool subFolders = false, bool downloadViaHttp = true)
         {
             using (ClientContext context = new ClientContext(siteUrl))
             {
@@ -242,12 +259,12 @@ namespace FilesOperations
                     return null;
                 }
 
-                var filesTree = ProcessFolderRecursive(context, folder, subFolders);
+                var filesTree = ProcessFolderRecursive(context, folder, subFolders, downloadViaHttp);
                 return filesTree;
             }
         }
 
-        private static FilesTree ProcessFolderRecursive(ClientContext context, Folder folder, bool subFolders = false)
+        private static FilesTree ProcessFolderRecursive(ClientContext context, Folder folder, bool subFolders = false, bool downloadViaHttp = true)
         {
             var filesTree = new FilesTree();
             var fileDatas = new List<FileData>();
@@ -274,14 +291,25 @@ namespace FilesOperations
                         fileData.EditorLogin = file.ModifiedBy.LoginName?.ToLower();
                         fileData.TimeCreated = file.TimeCreated;
 
-                        FileInformation fileInfo = Microsoft.SharePoint.Client.File.OpenBinaryDirect(context, file.ServerRelativeUrl);
-
-                        using (MemoryStream fileStream = new MemoryStream())
-                        {
-                            fileInfo.Stream.CopyTo(fileStream);
-                            fileData.FileContent = fileStream.ToArray();
-                        }
                         fileDatas.Add(fileData);
+
+                        if (downloadViaHttp)
+                        {
+                            var uri = new Uri(context.Url);
+                            // проблема при подсайтах в шарике - криво урл соберется
+                            var part1 = new UriBuilder(uri.Scheme, uri.Host, uri.Port, file.ServerRelativeUrl).Uri.AbsoluteUri;
+
+                            fileData.GetFileViaHttpClient(part1);
+                        }
+                        else
+                        {
+                            FileInformation fileInfo = Microsoft.SharePoint.Client.File.OpenBinaryDirect(context, file.ServerRelativeUrl);
+                            using (MemoryStream fileStream = new MemoryStream())
+                            {
+                                fileInfo.Stream.CopyTo(fileStream);
+                                fileData.FileContent = fileStream.ToArray();
+                            }
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -297,7 +325,7 @@ namespace FilesOperations
 
                     foreach (Folder subFolder in folder.Folders)
                     {
-                        filesTree.Children.Add(ProcessFolderRecursive(context, subFolder, subFolders));
+                        filesTree.Children.Add(ProcessFolderRecursive(context, subFolder, subFolders, downloadViaHttp));
                     }
                 }
             }
@@ -306,6 +334,22 @@ namespace FilesOperations
                 filesTree.Exception = ex;
             }
             return filesTree;
+        }
+
+        private static void GetFileViaHttpClient(this FileData fileData, string part1)
+        {
+            using (var resp = httpClient.GetAsync(part1, HttpCompletionOption.ResponseHeadersRead).Result)
+            {
+                resp.EnsureSuccessStatusCode();
+                using (var stream = resp.Content.ReadAsStreamAsync().Result)
+                {
+                    using (MemoryStream fileStream = new MemoryStream())
+                    {
+                        stream.CopyTo(fileStream);
+                        fileData.FileContent = fileStream.ToArray();
+                    }
+                }
+            }
         }
 
         #endregion
@@ -354,9 +398,12 @@ namespace FilesOperations
                     case AUTHORS_EDITORS: res.Add(line.AuthorLogin); res.Add(line.EditorLogin); break;
                 }
             });
-            foreach (var childNode in node.Children)
+            if (node.Children != null && node.Children.Any())
             {
-                GetAllUniqAuthorsInternal(childNode, res, who);
+                foreach (var childNode in node.Children)
+                {
+                    GetAllUniqAuthorsInternal(childNode, res, who);
+                }
             }
         }
     }
@@ -375,9 +422,17 @@ namespace FilesOperations
             }
         }
 
-        public static IEnumerable<FilesTree> Flatten(this FilesTree root)
+        public static IEnumerable<FilesTree> Flatten(this FilesTree root, bool noChildred = false)
         {
-            return root.Flatten(x => x.Children);
+            var items = root.Flatten(x => x.Children);
+            if (noChildred) {
+                items = items.ToList();
+                foreach (var item in items)
+                {
+                    item.Children = null;
+                }
+            }
+            return items;
         }
 
         public static IEnumerable<FileData> FlattenFiles(this FilesTree root)
