@@ -155,7 +155,7 @@ namespace FilesOperations
         /// <param name="startSegmentCount"></param>
         /// <returns></returns>
         /// <remarks>Исключения в возварщаемом объекте</remarks>
-        public static FilesTree DownloadFilesFromFolder(string urlToFolder, int startSegmentCount = 3, bool subFolders = false)
+        public static FilesTree DownloadFilesFromFolder(string urlToFolder, int startSegmentCount = 3, bool subFolders = false, bool downloadViaHttp = true)
         {
             if (!Uri.IsWellFormedUriString(urlToFolder, UriKind.Absolute))
             {
@@ -165,7 +165,7 @@ namespace FilesOperations
             var uri = new Uri(urlToFolder);
             var part1 = new UriBuilder(uri.Scheme, uri.Host, uri.Port, string.Join("/", uri.LocalPath.Trim(' ', '/').Split('/').Take(startSegmentCount))).Uri;
             var part2 = uri.LocalPath;
-            var filesTree = DownloadFilesFromFolder(part1.OriginalString, part2, subFolders);
+            var filesTree = DownloadFilesFromFolder(part1.OriginalString, part2, subFolders, downloadViaHttp);
             if (filesTree != null) filesTree.Url = urlToFolder;
             return filesTree;
         }
@@ -186,7 +186,7 @@ namespace FilesOperations
             var uri = new Uri(urlToFile);
             var part1 = new UriBuilder(uri.Scheme, uri.Host, uri.Port, string.Join("/", uri.LocalPath.Trim(' ', '/').Split('/').Take(startSegmentCount))).Uri;
             var part2 = uri.LocalPath;
-            var fileData = GetSharePointFileDetails(part1.OriginalString, part2);
+            var fileData = GetSharePointFileDetails(part1.OriginalString, part2, downloadViaHttp);
 
             return fileData;
         }
